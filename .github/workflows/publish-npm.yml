@@ -209,6 +209,10 @@ jobs:
           GH_TOKEN: ${{ secrets.UPSTREAM_AUTOMATION_TOKEN }}
           SENPI_SKIP_PM_VERIFY: '1'
           RELEASE_SHA: ${{ inputs.sha }}
+          # Dispatch inputs reach the shell as data, never as shell text.
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_FORCE_TESTS: ${{ inputs.force_tests }}
           # The release runs the same `npm run check` as CI, so it needs CI's TypeScript heap (ci.yml Check,
           # senpi#4022): on the default ~4 GB heap the check ran out of memory in the 2026.10.23-1 release.
           NODE_OPTIONS: --max-old-space-size=10240
@@ -219,16 +223,16 @@ jobs:
           }
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           ARGS=()
-          if [ -n "${{ inputs.version }}" ]; then
-            ARGS+=(--version "${{ inputs.version }}")
+          if [ -n "$INPUT_VERSION" ]; then
+            ARGS+=(--version "$INPUT_VERSION")
           fi
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
             ARGS+=(--dry-run)
           fi
           if [ -n "$RELEASE_SHA" ]; then
             ARGS+=(--sha "$RELEASE_SHA")
           fi
-          if [ "${{ inputs.force_tests }}" = "true" ]; then
+          if [ "$INPUT_FORCE_TESTS" = "true" ]; then
             ARGS+=(--force-tests)
           fi
           npm run release -- "${ARGS[@]}"
@@ -259,21 +263,30 @@ jobs:
       - name: Workflow summary
         if: always()
         shell: bash
+        env:
+          PUBLISH_ONLY: ${{ inputs.publish-only }}
+          INPUT_SHA: ${{ inputs.sha }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          INPUT_FORCE_TESTS: ${{ inputs.force_tests }}
+          INPUT_VERSION: ${{ inputs.version }}
+          JOB_STATUS: ${{ job.status }}
         run: |
-          if [ "${{ inputs.publish-only }}" = true ]; then
+          if [ "$PUBLISH_ONLY" = "true" ]; then
             commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+            mode="publish-only"
           else
-            commit="${{ inputs.sha || github.sha }}"
+            commit="${INPUT_SHA:-$GITHUB_SHA}"
+            mode="release"
           fi
           {
             echo "## Release"
             echo
             echo "| Field | Value |"
             echo "| --- | --- |"
-            echo "| Job status | ${{ job.status }} |"
-            echo "| Mode | ${{ inputs.publish-only && 'publish-only' || 'release' }} |"
-            echo "| Dry run | ${{ inputs.dry_run }} |"
-            echo "| Force tests | ${{ inputs.force_tests }} |"
-            echo "| Version | ${{ inputs.version || 'auto' }} |"
+            echo "| Job status | $JOB_STATUS |"
+            echo "| Mode | $mode |"
+            echo "| Dry run | $INPUT_DRY_RUN |"
+            echo "| Force tests | $INPUT_FORCE_TESTS |"
+            echo "| Version | ${INPUT_VERSION:-auto} |"
             echo "| Commit | $commit |"
           } >> "$GITHUB_STEP_SUMMARY"
